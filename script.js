@@ -181,7 +181,7 @@ function bindEvents() {
     $('sync-url').onchange = e => {
         settings.syncUrl = e.target.value;
         saveSettings();
-        checkSync();
+        SyncManager.setServerUrl(settings.syncUrl);
     };
 
     // 右键菜单
@@ -830,76 +830,94 @@ async function checkAI() {
     }
 }
 
-// ===== 同步 =====
+// ===== 同步（使用 SyncManager 模块） =====
 async function checkSync() {
-    if (!settings.syncUrl) {
-        el.syncDot.classList.add('offline');
-        el.syncText.textContent = '本地';
-        return;
-    }
-
-    try {
-        const r = await fetch(settings.syncUrl + '/ping', { signal: AbortSignal.timeout(2000) });
-        if (r.ok) {
-            el.syncDot.classList.remove('offline');
-            el.syncText.textContent = '已连接';
-        } else {
-            throw new Error();
-        }
-    } catch {
-        el.syncDot.classList.add('offline');
-        el.syncText.textContent = '离线';
-    }
+    SyncManager.init({
+        serverUrl: settings.syncUrl,
+        syncDot: el.syncDot,
+        syncText: el.syncText
+    });
 }
 
 async function syncToServer() {
     if (!settings.syncUrl || !bookId) return;
-
-    el.syncDot.classList.add('syncing');
-
-    try {
-        await fetch(settings.syncUrl + '/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                bookId,
-                position: currentHref,
-                annotations,
-                notes,
-                timestamp: Date.now()
-            })
-        });
-    } catch {}
-
-    el.syncDot.classList.remove('syncing');
+    
+    const result = await SyncManager.fullSync(bookId, {
+        position: currentHref,
+        annotations,
+        notes
+    });
+    
+    // 如果服务器有新数据，合并到本地
+    if (result.success && result.hasServerChanges && result.data) {
+        if (result.data.annotations) {
+            annotations = result.data.annotations;
+            localStorage.setItem('dr_annotations', JSON.stringify(annotations));
+        }
+        if (result.data.notes) {
+            notes = result.data.notes;
+            localStorage.setItem('dr_notes', JSON.stringify(notes));
+            updateBookmarkList();
+            updateNoteList();
+        }
+    }
 }
 
 async function getServerPosition() {
     if (!settings.syncUrl || !bookId) return null;
-
-    try {
-        const r = await fetch(settings.syncUrl + '/position/' + encodeURIComponent(bookId));
-        if (r.ok) {
-            const data = await r.json();
-            // 合并服务器数据
-            if (data.annotations) annotations = { ...annotations, ...data.annotations };
-            if (data.notes) notes = { ...notes, ...data.notes };
-            return data.position;
+    
+    // 先尝试获取完整数据
+    const serverData = await SyncManager.getBook(bookId);
+    
+    if (serverData) {
+        // 合并服务器数据到本地
+        if (serverData.annotations) {
+            annotations = mergeLocalData(annotations, serverData.annotations);
+            localStorage.setItem('dr_annotations', JSON.stringify(annotations));
         }
-    } catch {}
-    return null;
+        if (serverData.notes) {
+            notes = mergeLocalData(notes, serverData.notes);
+            localStorage.setItem('dr_notes', JSON.stringify(notes));
+        }
+        return serverData.position;
+    }
+    
+    // 降级为只获取位置
+    return await SyncManager.getPosition(bookId);
 }
 
 async function savePositionToServer() {
     if (!settings.syncUrl || !bookId) return;
+    await SyncManager.savePosition(bookId, currentHref);
+}
 
-    try {
-        await fetch(settings.syncUrl + '/position', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bookId, position: currentHref, timestamp: Date.now() })
-        });
-    } catch {}
+/**
+ * 合并本地数据和服务器数据
+ */
+function mergeLocalData(local, server) {
+    if (!local) return server || {};
+    if (!server) return local;
+    
+    const merged = JSON.parse(JSON.stringify(local));
+    
+    for (const [book, chapters] of Object.entries(server)) {
+        if (!merged[book]) {
+            merged[book] = {};
+        }
+        for (const [href, items] of Object.entries(chapters)) {
+            if (!merged[book][href]) {
+                merged[book][href] = [];
+            }
+            const existingIds = new Set(merged[book][href].map(i => i.id));
+            for (const item of items) {
+                if (!existingIds.has(item.id)) {
+                    merged[book][href].push(item);
+                }
+            }
+        }
+    }
+    
+    return merged;
 }
 
 // ===== 导出 =====

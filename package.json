@@ -1,11 +1,10 @@
 {
   "name": "deep-reader",
   "version": "1.0.0",
-  "description": "哲学文本深度阅读器 + 同步服务器",
-  "main": "sync-server.js",
+  "description": "Deep Reader 哲学阅读器 + 同步服务器",
+  "main": "server.js",
   "scripts": {
-    "start": "node sync-server.js",
-    "server": "node sync-server.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
