@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Reader - 哲学阅读器</title>
+    
+    <!-- EPUB.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-primary: #faf8f5;
+            --bg-secondary: #f5f2ed;
+            --bg-sidebar: #2c2c2c;
+            --text-primary: #1a1a1a;
+            --text-secondary: #666;
+            --text-sidebar: #e8e6e3;
+            --accent: #8b4513;
+            --accent-light: #d4a574;
+            --border: #e0dcd5;
+            --shadow: rgba(0, 0, 0, 0.08);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Serif SC', serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ==================== 侧边栏 ==================== */
+        .sidebar {
+            width: 300px;
+            min-width: 300px;
+            background: var(--bg-sidebar);
+            color: var(--text-sidebar);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 100;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.2);
+        }
+
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+            color: var(--accent-light);
+        }
+
+        .sidebar-header .subtitle {
+            font-size: 12px;
+            opacity: 0.6;
+        }
+
+        .book-info {
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 14px;
+            display: none;
+        }
+
+        .book-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #fff;
+            line-height: 1.4;
+        }
+
+        .book-author {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+
+        .toc-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 0;
+        }
+
+        .toc-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .toc-container::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+
+        .toc-item {
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .toc-item:hover {
+            background: rgba(255,255,255,0.08);
+            border-left-color: var(--accent-light);
+        }
+
+        .toc-item.active {
+            background: rgba(139, 69, 19, 0.3);
+            border-left-color: var(--accent);
+        }
+
+        .toc-item.level-1 { padding-left: 20px; font-weight: 600; }
+        .toc-item.level-2 { padding-left: 36px; font-size: 13px; }
+        .toc-item.level-3 { padding-left: 52px; font-size: 12px; opacity: 0.8; }
+
+        /* ==================== 主内容区 ==================== */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            min-height: 60px;
+            flex-shrink: 0;
+        }
+
+        .toolbar-left, .toolbar-center, .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+
+        .btn:hover {
+            background: var(--bg-primary);
+            border-color: var(--accent);
+        }
+
+        .btn-icon {
+            padding: 8px 12px;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .btn-primary:hover {
+            background: #7a3d10;
+        }
+
+        .page-indicator {
+            font-size: 13px;
+            color: var(--text-secondary);
+            min-width: 100px;
+            text-align: center;
+        }
+
+        /* ==================== 阅读区域 ==================== */
+        .reader-wrapper {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            padding: 24px;
+            gap: 24px;
+        }
+
+        .reader-container {
+            flex: 1;
+            background: #fff;
+            border-radius: 4px;
+            box-shadow: 0 2px 20px var(--shadow);
+            position: relative;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        #reader {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+
+        /* ==================== AI 面板 ==================== */
+        .ai-panel {
+            width: 380px;
+            min-width: 380px;
+            background: #fff;
+            border-radius: 4px;
+            box-shadow: 0 2px 20px var(--shadow);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .ai-panel.collapsed {
+            width: 0;
+            min-width: 0;
+            padding: 0;
+            opacity: 0;
+        }
+
+        .ai-panel-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-secondary);
+            flex-shrink: 0;
+        }
+
+        .ai-panel-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ai-status {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            animation: pulse 2s infinite;
+        }
+
+        .ai-status.offline {
+            background: #ef4444;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 选中文本显示区 */
+        .selected-text-section {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            background: #fffbf5;
+            flex-shrink: 0;
+        }
+
+        .selected-text-section label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .selected-text-display {
+            width: 100%;
+            min-height: 80px;
+            max-height: 150px;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: vertical;
+            background: #fff;
+        }
+
+        .selected-text-display:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .selected-text-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .selected-text-actions .btn {
+            flex: 1;
+            justify-content: center;
+            font-size: 13px;
+            padding: 8px 12px;
+        }
+
+        /* AI 输出区 */
+        .ai-output-section {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .ai-output-section::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .ai-output-section::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        .ai-response {
+            font-size: 14px;
+            line-height: 1.8;
+            color: var(--text-primary);
+        }
+
+        .ai-response p {
+            margin-bottom: 12px;
+        }
+
+        .ai-response strong {
+            color: var(--accent);
+        }
+
+        .ai-placeholder {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+
+        .ai-placeholder svg {
+            width: 40px;
+            height: 40px;
+            margin-bottom: 12px;
+            opacity: 0.3;
+        }
+
+        .ai-loading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ==================== 欢迎界面 ==================== */
+        .welcome-screen {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            z-index: 50;
+        }
+
+        .welcome-content {
+            text-align: center;
+            max-width: 420px;
+            padding: 40px;
+        }
+
+        .welcome-logo {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        .welcome-content h2 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: var(--accent);
+        }
+
+        .welcome-content p {
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+            line-height: 1.6;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 40px 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: var(--bg-primary);
+        }
+
+        .upload-area:hover {
+            border-color: var(--accent);
+            background: var(--bg-secondary);
+        }
+
+        .upload-area svg {
+            width: 40px;
+            height: 40px;
+            margin-bottom: 12px;
+            color: var(--accent);
+        }
+
+        .upload-area h3 {
+            font-size: 15px;
+            margin-bottom: 6px;
+        }
+
+        .upload-area span {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* ==================== 设置面板 ==================== */
+        .settings-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+
+        .settings-modal.show {
+            display: flex;
+        }
+
+        .settings-content {
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 440px;
+        }
+
+        .settings-content h3 {
+            font-size: 18px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .setting-group {
+            margin-bottom: 18px;
+        }
+
+        .setting-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+
+        .setting-group input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .setting-group input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .setting-value {
+            text-align: right;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* ==================== 加载状态 ==================== */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            z-index: 40;
+        }
+
+        .loading-overlay .spinner {
+            width: 40px;
+            height: 40px;
+            margin-bottom: 16px;
+        }
+
+        /* ==================== 响应式 ==================== */
+        @media (max-width: 1100px) {
+            .ai-panel {
+                position: fixed;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                z-index: 150;
+                border-radius: 0;
+            }
+            
+            .ai-panel.collapsed {
+                transform: translateX(100%);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                z-index: 150;
+            }
+
+            .reader-wrapper {
+                padding: 12px;
+            }
+
+            .toolbar {
+                padding: 10px 12px;
+            }
+            
+            .ai-panel {
+                width: 100%;
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h1>📚 Deep Reader</h1>
+                <div class="subtitle">哲学文本深度阅读器</div>
+            </div>
+            <div class="book-info" id="book-info">
+                <div class="book-title" id="book-title">书名</div>
+                <div class="book-author" id="book-author">作者</div>
+            </div>
+            <nav class="toc-container" id="toc-container">
+                <div style="padding: 20px; color: rgba(255,255,255,0.5); text-align: center; font-size: 13px;">
+                    请先加载电子书
+                </div>
+            </nav>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <div class="toolbar">
+                <div class="toolbar-left">
+                    <button class="btn btn-icon" id="toggle-sidebar" title="切换目录">☰</button>
+                    <button class="btn" id="open-file">📂 打开</button>
+                </div>
+                <div class="toolbar-center">
+                    <button class="btn btn-icon" id="prev-page">←</button>
+                    <span class="page-indicator" id="page-indicator">- / -</span>
+                    <button class="btn btn-icon" id="next-page">→</button>
+                </div>
+                <div class="toolbar-right">
+                    <button class="btn btn-icon" id="toggle-settings" title="设置">⚙️</button>
+                    <button class="btn" id="toggle-ai">🤖 AI</button>
+                </div>
+            </div>
+
+            <div class="reader-wrapper">
+                <div class="reader-container">
+                    <div id="reader"></div>
+                    
+                    <!-- 欢迎界面 -->
+                    <div class="welcome-screen" id="welcome-screen">
+                        <div class="welcome-content">
+                            <div class="welcome-logo">📖</div>
+                            <h2>Deep Reader</h2>
+                            <p>专为哲学文本设计的深度阅读器<br>支持 EPUB 格式，集成本地 AI</p>
+                            <div class="upload-area" id="upload-area">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17,8 12,3 7,8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <h3>点击或拖拽上传 EPUB</h3>
+                                <span>支持 .epub 格式</span>
+                            </div>
+                            <input type="file" id="file-input" accept=".epub">
+                        </div>
+                    </div>
+                    
+                    <!-- 加载状态 -->
+                    <div class="loading-overlay" id="loading-overlay" style="display: none;">
+                        <div class="spinner"></div>
+                        <span id="loading-text">加载中...</span>
+                    </div>
+                </div>
+
+                <!-- AI 面板 -->
+                <aside class="ai-panel" id="ai-panel">
+                    <div class="ai-panel-header">
+                        <h3>
+                            <span class="ai-status" id="ai-status"></span>
+                            DeepSeek 分析
+                        </h3>
+                        <button class="btn btn-icon" id="close-ai" style="padding: 4px 8px;">✕</button>
+                    </div>
+                    
+                    <!-- 选中文本区域 -->
+                    <div class="selected-text-section">
+                        <label>📋 选中的文本（可编辑）</label>
+                        <textarea class="selected-text-display" id="selected-text" placeholder="选中书中文字后会自动显示在这里，也可以直接粘贴文本..."></textarea>
+                        <div class="selected-text-actions">
+                            <button class="btn" id="clear-text">清空</button>
+                            <button class="btn btn-primary" id="analyze-btn">🔍 分析</button>
+                        </div>
+                    </div>
+                    
+                    <!-- AI 输出区 -->
+                    <div class="ai-output-section" id="ai-output">
+                        <div class="ai-placeholder">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                                <line x1="12" y1="17" x2="12.01" y2="17"/>
+                            </svg>
+                            <p>选中文本后点击分析<br>AI 将为您解读哲学概念</p>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="settings-modal" id="settings-modal">
+        <div class="settings-content">
+            <h3>⚙️ 阅读设置</h3>
+            <div class="setting-group">
+                <label>字体大小</label>
+                <input type="range" id="font-size" min="14" max="28" value="18">
+                <div class="setting-value"><span id="font-size-value">18</span>px</div>
+            </div>
+            <div class="setting-group">
+                <label>行高</label>
+                <input type="range" id="line-height" min="1.4" max="2.4" step="0.1" value="1.8">
+                <div class="setting-value"><span id="line-height-value">1.8</span></div>
+            </div>
+            <div class="setting-group">
+                <label>Ollama API 地址</label>
+                <input type="text" id="ollama-url" value="http://localhost:11434">
+            </div>
+            <div class="setting-group">
+                <label>AI 模型名称</label>
+                <input type="text" id="ai-model" value="deepseek-r1:8b">
+            </div>
+            <div style="text-align: right; margin-top: 24px;">
+                <button class="btn btn-primary" id="close-settings">保存并关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 全局状态 ====================
+        let book = null;
+        let rendition = null;
+        let currentChapterIndex = 0;
+        let chapters = [];
+        
+        const settings = {
+            fontSize: 18,
+            lineHeight: 1.8,
+            ollamaUrl: 'http://localhost:11434',
+            aiModel: 'deepseek-r1:8b'
+        };
+
+        // ==================== DOM 元素 ====================
+        const $ = id => document.getElementById(id);
+        const elements = {
+            sidebar: $('sidebar'),
+            tocContainer: $('toc-container'),
+            bookInfo: $('book-info'),
+            bookTitle: $('book-title'),
+            bookAuthor: $('book-author'),
+            welcomeScreen: $('welcome-screen'),
+            loadingOverlay: $('loading-overlay'),
+            loadingText: $('loading-text'),
+            uploadArea: $('upload-area'),
+            fileInput: $('file-input'),
+            reader: $('reader'),
+            pageIndicator: $('page-indicator'),
+            aiPanel: $('ai-panel'),
+            aiStatus: $('ai-status'),
+            selectedText: $('selected-text'),
+            aiOutput: $('ai-output'),
+            settingsModal: $('settings-modal')
+        };
+
+        // ==================== 初始化 ====================
+        function init() {
+            loadSettings();
+            bindEvents();
+            checkOllamaStatus();
+            elements.aiPanel.classList.remove('collapsed');
+        }
+
+        function loadSettings() {
+            const saved = localStorage.getItem('deepReaderSettings');
+            if (saved) Object.assign(settings, JSON.parse(saved));
+            applySettingsToUI();
+        }
+
+        function saveSettings() {
+            localStorage.setItem('deepReaderSettings', JSON.stringify(settings));
+        }
+
+        function applySettingsToUI() {
+            $('font-size').value = settings.fontSize;
+            $('font-size-value').textContent = settings.fontSize;
+            $('line-height').value = settings.lineHeight;
+            $('line-height-value').textContent = settings.lineHeight;
+            $('ollama-url').value = settings.ollamaUrl;
+            $('ai-model').value = settings.aiModel;
+        }
+
+        // ==================== 事件绑定 ====================
+        function bindEvents() {
+            // 文件上传
+            elements.uploadArea.onclick = () => elements.fileInput.click();
+            elements.fileInput.onchange = e => e.target.files[0] && loadBook(e.target.files[0]);
+            $('open-file').onclick = () => elements.fileInput.click();
+
+            // 拖拽
+            elements.uploadArea.ondragover = e => {
+                e.preventDefault();
+                elements.uploadArea.style.borderColor = 'var(--accent)';
+            };
+            elements.uploadArea.ondragleave = () => elements.uploadArea.style.borderColor = '';
+            elements.uploadArea.ondrop = e => {
+                e.preventDefault();
+                elements.uploadArea.style.borderColor = '';
+                const file = e.dataTransfer.files[0];
+                if (file?.name.endsWith('.epub')) loadBook(file);
+            };
+
+            // 导航
+            $('prev-page').onclick = () => navigateChapter(-1);
+            $('next-page').onclick = () => navigateChapter(1);
+            document.onkeydown = e => {
+                if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+                if (e.key === 'ArrowLeft') navigateChapter(-1);
+                else if (e.key === 'ArrowRight') navigateChapter(1);
+            };
+
+            // 面板切换
+            $('toggle-sidebar').onclick = () => elements.sidebar.classList.toggle('collapsed');
+            $('toggle-ai').onclick = () => elements.aiPanel.classList.toggle('collapsed');
+            $('close-ai').onclick = () => elements.aiPanel.classList.add('collapsed');
+
+            // 设置
+            $('toggle-settings').onclick = () => elements.settingsModal.classList.add('show');
+            $('close-settings').onclick = () => {
+                settings.ollamaUrl = $('ollama-url').value;
+                settings.aiModel = $('ai-model').value;
+                saveSettings();
+                elements.settingsModal.classList.remove('show');
+                checkOllamaStatus();
+            };
+            elements.settingsModal.onclick = e => {
+                if (e.target === elements.settingsModal) elements.settingsModal.classList.remove('show');
+            };
+
+            // 设置值变化
+            $('font-size').oninput = e => {
+                settings.fontSize = parseInt(e.target.value);
+                $('font-size-value').textContent = settings.fontSize;
+                saveSettings();
+                if (rendition) updateReaderStyle();
+            };
+            $('line-height').oninput = e => {
+                settings.lineHeight = parseFloat(e.target.value);
+                $('line-height-value').textContent = settings.lineHeight;
+                saveSettings();
+                if (rendition) updateReaderStyle();
+            };
+
+            // AI 分析
+            $('analyze-btn').onclick = analyzeText;
+            $('clear-text').onclick = () => elements.selectedText.value = '';
+        }
+
+        // ==================== 书籍加载 ====================
+        function showLoading(text = '加载中...') {
+            elements.loadingOverlay.style.display = 'flex';
+            elements.loadingText.textContent = text;
+        }
+
+        function hideLoading() {
+            elements.loadingOverlay.style.display = 'none';
+        }
+
+        async function loadBook(file) {
+            try {
+                elements.welcomeScreen.style.display = 'none';
+                showLoading('正在解析电子书...');
+
+                if (book) {
+                    book.destroy();
+                    book = null;
+                    rendition = null;
+                }
+
+                const arrayBuffer = await file.arrayBuffer();
+                book = ePub(arrayBuffer);
+
+                showLoading('加载书籍信息...');
+                await book.ready;
+
+                const metadata = book.packaging.metadata;
+                elements.bookTitle.textContent = metadata.title || file.name.replace('.epub', '');
+                elements.bookAuthor.textContent = metadata.creator || '未知作者';
+                elements.bookInfo.style.display = 'block';
+
+                showLoading('加载目录...');
+                const nav = await book.loaded.navigation;
+                
+                // 获取所有章节
+                await book.loaded.spine;
+                chapters = book.spine.items.map(item => item.href);
+                
+                renderTOC(nav.toc);
+
+                // 使用滚动文档模式渲染
+                showLoading('渲染内容...');
+                elements.reader.innerHTML = '';
+                
+                rendition = book.renderTo(elements.reader, {
+                    width: '100%',
+                    height: '100%',
+                    spread: 'none',
+                    flow: 'scrolled-doc',
+                    manager: 'continuous'
+                });
+
+                // 注册样式
+                rendition.themes.register('default', getReaderStyles());
+                rendition.themes.select('default');
+                rendition.themes.fontSize(settings.fontSize + 'px');
+
+                // 显示内容
+                const savedIndex = localStorage.getItem('deepReader_chapter_' + metadata.title);
+                currentChapterIndex = savedIndex ? parseInt(savedIndex) : 0;
+                
+                await displayChapter(currentChapterIndex);
+
+                // 监听文本选择
+                rendition.on('selected', (cfiRange, contents) => {
+                    const selection = contents.window.getSelection();
+                    const text = selection.toString().trim();
+                    if (text) {
+                        elements.selectedText.value = text;
+                        elements.aiPanel.classList.remove('collapsed');
+                    }
+                });
+
+                hideLoading();
+
+            } catch (error) {
+                console.error('加载失败:', error);
+                hideLoading();
+                alert('加载失败: ' + error.message);
+                elements.welcomeScreen.style.display = 'flex';
+            }
+        }
+
+        function getReaderStyles() {
+            return {
+                'body': {
+                    'font-family': "'Noto Serif SC', 'SimSun', serif !important",
+                    'padding': '40px 60px !important',
+                    'line-height': settings.lineHeight + ' !important',
+                    'color': '#1a1a1a !important',
+                    'background': '#fff !important'
+                },
+                'p': {
+                    'text-indent': '2em !important',
+                    'margin': '0 0 1em 0 !important',
+                    'text-align': 'justify !important'
+                },
+                'h1, h2, h3, h4, h5, h6': {
+                    'text-indent': '0 !important',
+                    'font-weight': '600 !important',
+                    'margin': '1.2em 0 0.6em 0 !important'
+                },
+                'blockquote': {
+                    'border-left': '3px solid #d4a574 !important',
+                    'padding-left': '1em !important',
+                    'margin': '1em 0 !important',
+                    'color': '#555 !important'
+                }
+            };
+        }
+
+        function updateReaderStyle() {
+            if (!rendition) return;
+            rendition.themes.register('default', getReaderStyles());
+            rendition.themes.select('default');
+            rendition.themes.fontSize(settings.fontSize + 'px');
+        }
+
+        async function displayChapter(index) {
+            if (!book || !chapters.length) return;
+            
+            index = Math.max(0, Math.min(index, chapters.length - 1));
+            currentChapterIndex = index;
+
+            try {
+                await rendition.display(chapters[index]);
+                updatePageIndicator();
+                
+                // 保存进度
+                const title = book.packaging.metadata.title;
+                if (title) {
+                    localStorage.setItem('deepReader_chapter_' + title, index.toString());
+                }
+
+                // 更新目录高亮
+                document.querySelectorAll('.toc-item').forEach((el, i) => {
+                    el.classList.toggle('active', i === index);
+                });
+            } catch (e) {
+                console.error('显示章节失败:', e);
+            }
+        }
+
+        function navigateChapter(delta) {
+            displayChapter(currentChapterIndex + delta);
+        }
+
+        // ==================== 目录 ====================
+        function renderTOC(toc) {
+            elements.tocContainer.innerHTML = '';
+            let itemIndex = 0;
+            
+            function addItems(items, level = 1) {
+                items.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = `toc-item level-${Math.min(level, 3)}`;
+                    div.textContent = item.label?.trim() || '(无标题)';
+                    
+                    const href = item.href;
+                    div.onclick = async () => {
+                        try {
+                            await rendition.display(href);
+                            // 找到对应的 spine index
+                            const spineIndex = chapters.findIndex(ch => 
+                                ch === href || ch.includes(href.split('#')[0])
+                            );
+                            if (spineIndex >= 0) currentChapterIndex = spineIndex;
+                            updatePageIndicator();
+                            
+                            document.querySelectorAll('.toc-item').forEach(el => el.classList.remove('active'));
+                            div.classList.add('active');
+                        } catch (e) {
+                            console.error('跳转失败:', e);
+                        }
+                    };
+                    elements.tocContainer.appendChild(div);
+                    itemIndex++;
+                    
+                    if (item.subitems?.length > 0) {
+                        addItems(item.subitems, level + 1);
+                    }
+                });
+            }
+            
+            addItems(toc);
+        }
+
+        function updatePageIndicator() {
+            if (!chapters.length) {
+                elements.pageIndicator.textContent = '- / -';
+                return;
+            }
+            elements.pageIndicator.textContent = `${currentChapterIndex + 1} / ${chapters.length}`;
+        }
+
+        // ==================== AI 分析 ====================
+        async function checkOllamaStatus() {
+            try {
+                const res = await fetch(settings.ollamaUrl + '/api/tags', { 
+                    signal: AbortSignal.timeout(3000)
+                });
+                elements.aiStatus.classList.toggle('offline', !res.ok);
+                elements.aiStatus.title = res.ok ? 'Ollama 已连接' : '连接失败';
+            } catch {
+                elements.aiStatus.classList.add('offline');
+                elements.aiStatus.title = 'Ollama 未连接';
+            }
+        }
+
+        async function analyzeText() {
+            const text = elements.selectedText.value.trim();
+            if (!text) {
+                alert('请先选中或输入要分析的文本');
+                return;
+            }
+
+            elements.aiOutput.innerHTML = `
+                <div class="ai-loading">
+                    <div class="spinner"></div>
+                    <span>正在分析...</span>
+                </div>
+            `;
+
+            const prompt = `你是一位精通黑格尔哲学及德国古典哲学的学者。请分析以下文本：
+
+"""
+${text}
+"""
+
+请从以下方面解读：
+1. **核心概念**：识别关键哲学术语并解释
+2. **论证逻辑**：分析论证结构
+3. **体系定位**：在黑格尔哲学体系中的位置
+4. **现代阐释**：用通俗语言解释含义
+
+用中文回答，清晰易懂。`;
+
+            try {
+                const res = await fetch(settings.ollamaUrl + '/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: settings.aiModel,
+                        prompt: prompt,
+                        stream: true
+                    })
+                });
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let result = '';
+
+                elements.aiOutput.innerHTML = '<div class="ai-response"></div>';
+                const responseDiv = elements.aiOutput.querySelector('.ai-response');
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    for (const line of chunk.split('\n').filter(l => l.trim())) {
+                        try {
+                            const json = JSON.parse(line);
+                            if (json.response) {
+                                result += json.response;
+                                responseDiv.innerHTML = formatResponse(result);
+                                elements.aiOutput.scrollTop = elements.aiOutput.scrollHeight;
+                            }
+                        } catch {}
+                    }
+                }
+
+            } catch (error) {
+                elements.aiOutput.innerHTML = `
+                    <div class="ai-placeholder" style="color: #c00;">
+                        <p><strong>分析失败</strong></p>
+                        <p style="font-size: 13px; margin-top: 8px;">
+                            ${error.message}<br><br>
+                            请检查：<br>
+                            1. 运行 <code>ollama serve</code><br>
+                            2. 安装模型 <code>ollama pull ${settings.aiModel}</code>
+                        </p>
+                    </div>
+                `;
+            }
+        }
+
+        function formatResponse(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/^#{1,3} (.*)$/gm, '<strong style="display:block;margin:12px 0 6px;">$1</strong>')
+                .replace(/^\d+\.\s/gm, '<br>• ')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+        }
+
+        // ==================== 启动 ====================
+        init();
+    </script>
+</body>
+</html>
