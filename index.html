@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Reader - 哲学阅读器</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- 左侧栏 - 书签列表 -->
+        <aside class="sidebar sidebar-left" id="sidebar-left">
+            <div class="sidebar-header">
+                <h2>📑 书签</h2>
+                <button class="btn-icon" id="close-left">✕</button>
+            </div>
+            <div class="sidebar-content" id="bookmark-list">
+                <div class="empty-hint">暂无书签<br><small>添加批注后自动生成</small></div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main">
+            <!-- 工具栏 -->
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <button class="btn-icon" id="toggle-left" title="书签">📑</button>
+                    <button class="btn" id="open-file">📂 打开</button>
+                    <button class="btn" id="export-btn">📤 导出</button>
+                </div>
+                <div class="toolbar-group nav-group">
+                    <button class="btn-icon" id="prev-btn">←</button>
+                    <span class="nav-info" id="nav-info">- / -</span>
+                    <button class="btn-icon" id="next-btn">→</button>
+                </div>
+                <div class="toolbar-group">
+                    <div class="sync-status">
+                        <span class="sync-dot" id="sync-dot"></span>
+                        <span id="sync-text">本地</span>
+                    </div>
+                    <button class="btn-icon" id="settings-btn" title="设置">⚙️</button>
+                    <button class="btn-icon" id="toggle-right" title="批注">📝</button>
+                </div>
+            </div>
+
+            <!-- 阅读区 -->
+            <div class="reader-area">
+                <div class="reader-box">
+                    <div id="reader"></div>
+                    
+                    <!-- 欢迎页 -->
+                    <div class="welcome" id="welcome">
+                        <div class="welcome-box">
+                            <div class="logo">📖</div>
+                            <h2>Deep Reader</h2>
+                            <p>哲学文本深度阅读器<br>支持批注、书签、云同步</p>
+                            <div class="upload-zone" id="upload-zone">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                    <polyline points="17,8 12,3 7,8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <h3>点击或拖拽上传</h3>
+                                <span>EPUB 格式</span>
+                            </div>
+                            <input type="file" id="file-input" accept=".epub">
+                        </div>
+                    </div>
+                    
+                    <!-- 加载中 -->
+                    <div class="loading" id="loading">
+                        <div class="spinner"></div>
+                        <span id="loading-text">加载中...</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 右侧栏 - 批注列表 -->
+        <aside class="sidebar sidebar-right" id="sidebar-right">
+            <div class="sidebar-header">
+                <h2>📝 批注</h2>
+                <button class="btn-icon" id="close-right">✕</button>
+            </div>
+            <div class="sidebar-content" id="note-list">
+                <div class="empty-hint">暂无批注<br><small>选中文本右键添加</small></div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- 右键菜单 -->
+    <div class="context-menu" id="context-menu">
+        <button data-action="highlight">🖍️ 高亮</button>
+        <button data-action="underline">➖ 下划线</button>
+        <button data-action="wavy">〰️ 波浪线</button>
+        <div class="menu-divider"></div>
+        <button data-action="note">📝 添加批注</button>
+        <div class="menu-divider"></div>
+        <button data-action="translate">🌐 翻译</button>
+        <button data-action="analyze">🔍 深度分析</button>
+    </div>
+
+    <!-- 删除确认菜单 -->
+    <div class="context-menu" id="delete-menu">
+        <button data-action="delete">🗑️ 删除此标注</button>
+    </div>
+
+    <!-- 批注输入框 -->
+    <div class="note-input-modal" id="note-modal">
+        <div class="note-input-box">
+            <h4>📝 添加批注</h4>
+            <div class="note-preview" id="note-preview"></div>
+            <textarea id="note-input" placeholder="写下你的想法..."></textarea>
+            <div class="note-actions">
+                <button class="btn" id="cancel-note">取消</button>
+                <button class="btn btn-primary" id="save-note">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="settings-panel" id="settings-panel">
+        <div class="settings-header">
+            <h3>⚙️ 设置</h3>
+            <button class="btn-icon" id="close-settings">✕</button>
+        </div>
+        <div class="settings-body">
+            <div class="setting-item">
+                <label>字号大小</label>
+                <div class="setting-control">
+                    <input type="range" id="font-size" min="14" max="26" value="17">
+                    <span id="font-size-val">17px</span>
+                </div>
+            </div>
+            <div class="setting-item">
+                <label>行间距</label>
+                <div class="setting-control">
+                    <input type="range" id="line-height" min="1.4" max="2.4" step="0.1" value="1.8">
+                    <span id="line-height-val">1.8</span>
+                </div>
+            </div>
+            <div class="setting-item">
+                <label>阅读模式</label>
+                <div class="setting-control">
+                    <select id="read-mode">
+                        <option value="paginated">翻页模式</option>
+                        <option value="scrolled">滚动模式</option>
+                    </select>
+                </div>
+            </div>
+            <div class="setting-divider"></div>
+            <div class="setting-item">
+                <label>Ollama API</label>
+                <input type="text" id="ollama-url" value="http://localhost:11434" class="setting-input">
+            </div>
+            <div class="setting-item">
+                <label>模型名称</label>
+                <input type="text" id="ai-model" value="deepseek-r1:8b" class="setting-input">
+            </div>
+            <div class="setting-item">
+                <label>同步服务器</label>
+                <input type="text" id="sync-url" placeholder="http://localhost:3001" class="setting-input">
+            </div>
+        </div>
+    </div>
+
+    <!-- AI 结果面板 -->
+    <div class="ai-panel" id="ai-panel">
+        <div class="ai-header">
+            <span id="ai-mode-label">🔍 深度分析</span>
+            <button class="btn-icon" id="close-ai">✕</button>
+        </div>
+        <div class="ai-content" id="ai-content">
+            <div class="ai-placeholder">等待分析...</div>
+        </div>
+    </div>
+
+    <!-- 导出模态框 -->
+    <div class="modal" id="export-modal">
+        <div class="modal-box">
+            <h3>📤 导出批注</h3>
+            <div class="form-group">
+                <label>选择书籍</label>
+                <select id="export-book"><option value="all">全部</option></select>
+            </div>
+            <div class="export-options">
+                <div class="export-opt" data-fmt="pdf"><h4>📄 PDF</h4><p>导出为PDF文档</p></div>
+                <div class="export-opt" data-fmt="md"><h4>📝 Markdown</h4><p>导出为Markdown</p></div>
+                <div class="export-opt" data-fmt="json"><h4>💾 JSON</h4><p>数据备份</p></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" id="close-export">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
