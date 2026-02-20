@@ -252,6 +252,7 @@ export default function ReaderEngine({ bookUrl }) {
         renditionRef, bookRef, fontSize, lineHeight, pageMode, setToc,
         setFloatingMenu, setCurrentSelection, highlightTheme, colorMode, markups, floatingMenu,
         setLeftPanel, currentBookId, setMarkups,
+        activeGhostCfi,
     } = useContext(ReaderContext);
 
     const theme = getTheme(highlightTheme);
@@ -329,6 +330,17 @@ export default function ReaderEngine({ bookUrl }) {
         }
 
         const container = readerDiv.current;
+
+        // ★ 保存当前阅读位置（用于模式切换）
+        let currentCfi = null;
+        if (renditionRef.current) {
+            try {
+                currentCfi = renditionRef.current.currentLocation()?.start?.cfi;
+            } catch (e) {
+                // ignore
+            }
+        }
+
         container.innerHTML = '';
 
         const isArrayBuffer = bookUrl instanceof ArrayBuffer;
@@ -543,7 +555,8 @@ export default function ReaderEngine({ bookUrl }) {
                 markupsRef.current = saved;
                 setMarkups(saved);
             }
-            const savedCfi = currentBookId ? loadReadingProgress(currentBookId) : null;
+            // ★ 优先使用模式切换时保存的位置，其次使用数据库保存的位置
+            const savedCfi = currentCfi || (currentBookId ? loadReadingProgress(currentBookId) : null);
             // await display 完成后再主动 rebind，修复首次渲染时 markupsRef 为空的竞态
             await rendition.display(savedCfi || undefined);
             if (markupsRef.current?.length) {
@@ -606,58 +619,140 @@ export default function ReaderEngine({ bookUrl }) {
         return () => window.removeEventListener('keydown', h);
     }, [pageMode, goPrev, goNext]);
 
-    // Wheel navigation (paginated mode) — 注入到 iframe 内部
+    // Wheel navigation (paginated mode) — "抖音式"离散翻页
     useEffect(() => {
         if (pageMode !== 'paginated' || !renditionRef.current) return;
-        let accY = 0;
-        let cooldown = false;
-        let resetTimer = null;
+
+        let isPaging = false;
+        let wheelTimer = null;
+        let lastPageTime = 0;
 
         const h = (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (cooldown) return;
 
-            accY += e.deltaY;
+            // 忽略极小的 deltaY 值（包括 -0）
+            if (Math.abs(e.deltaY) < 1) return;
 
-            // 普通鼠标刻度滚轮 deltaMode=1（行）或单次 deltaY 较大，立即触发
-            const isClick = e.deltaMode === 1 || Math.abs(e.deltaY) >= 50;
+            const now = Date.now();
 
-            clearTimeout(resetTimer);
-            resetTimer = setTimeout(() => { accY = 0; }, 80);
+            // 处于锁定状态时：重置解锁定时器，吸收触控板的物理惯性尾流
+            if (isPaging) {
+                clearTimeout(wheelTimer);
+                wheelTimer = setTimeout(() => {
+                    if (Date.now() - lastPageTime > 350) {
+                        isPaging = false;
+                    }
+                }, 80);
+                return;
+            }
 
-            if (isClick || Math.abs(accY) >= 60) {
-                const dir = accY > 0 ? 'next' : 'prev';
-                accY = 0;
-                cooldown = true;
-                setTimeout(() => { cooldown = false; }, 350);
-                if (dir === 'next') goNext();
-                else goPrev();
+            // 触发翻页：一触即发，无累加延迟
+            isPaging = true;
+            lastPageTime = now;
+
+            if (e.deltaY > 0) goNext();
+            else if (e.deltaY < 0) goPrev();
+
+            // 设置基础解锁定时器
+            clearTimeout(wheelTimer);
+            wheelTimer = setTimeout(() => {
+                isPaging = false;
+            }, 350);
+        };
+
+        // 绑定事件到容器和 iframe
+        const bindWheelEvents = () => {
+            const container = readerDiv.current;
+            if (container) {
+                container.addEventListener('wheel', h, { passive: false });
+            }
+            const iframe = container?.querySelector('iframe');
+            if (iframe?.contentDocument) {
+                iframe.contentDocument.addEventListener('wheel', h, { passive: false });
             }
         };
-        // 同时绑定外层容器和 iframe 内部 document
-        const container = readerDiv.current;
-        if (container) container.addEventListener('wheel', h, { passive: false });
-        const iframe = container?.querySelector('iframe');
-        if (iframe?.contentDocument) {
-            iframe.contentDocument.addEventListener('wheel', h, { passive: false });
-        }
+
+        // 初始绑定
+        bindWheelEvents();
+
         // rendition 每次渲染新章节后重新绑定
         const onRendered = () => {
-            const newIframe = readerDiv.current?.querySelector('iframe');
-            if (newIframe?.contentDocument) {
-                newIframe.contentDocument.removeEventListener('wheel', h);
-                newIframe.contentDocument.addEventListener('wheel', h, { passive: false });
-            }
+            // 延迟一帧确保 iframe 完全加载
+            requestAnimationFrame(() => {
+                const container = readerDiv.current;
+                const newIframe = container?.querySelector('iframe');
+                if (newIframe?.contentDocument) {
+                    newIframe.contentDocument.removeEventListener('wheel', h);
+                    newIframe.contentDocument.addEventListener('wheel', h, { passive: false });
+                }
+            });
         };
+
         renditionRef.current.on('rendered', onRendered);
+
         return () => {
+            clearTimeout(wheelTimer);
+            const container = readerDiv.current;
             if (container) container.removeEventListener('wheel', h);
-            const iframe2 = container?.querySelector('iframe');
-            if (iframe2?.contentDocument) iframe2.contentDocument.removeEventListener('wheel', h);
+            const iframe = container?.querySelector('iframe');
+            if (iframe?.contentDocument) {
+                iframe.contentDocument.removeEventListener('wheel', h);
+            }
             renditionRef.current?.off('rendered', onRendered);
         };
     }, [pageMode, goNext, goPrev, renditionRef]);
+
+    // Ghost highlight：幽灵高亮，仅用 opacity 动画，不触发重排
+    useEffect(() => {
+        const rendition = renditionRef.current;
+        if (!rendition) return;
+        if (!activeGhostCfi) return;
+
+        try {
+            rendition.annotations.add('highlight', activeGhostCfi, {}, null, 'ghost-hl');
+        } catch {}
+
+        // 注入 ghost-hl CSS（只注入一次）
+        if (!document.getElementById('ghost-hl-css')) {
+            const s = document.createElement('style');
+            s.id = 'ghost-hl-css';
+            s.textContent = `
+                @keyframes ghostPulse { 0% { opacity: 0.15; } 50% { opacity: 0.45; } 100% { opacity: 0.15; } }
+                .ghost-hl rect { fill: #FFD60A !important; will-change: opacity; animation: ghostPulse 2s ease-in-out infinite; }
+            `;
+            document.head.appendChild(s);
+        }
+
+        return () => {
+            try { rendition.annotations.remove(activeGhostCfi, 'highlight'); } catch {}
+        };
+    }, [activeGhostCfi, renditionRef]);
+
+    // ResizeObserver + 防抖：监听容器尺寸变化，自动调用 rendition.resize()
+    useEffect(() => {
+        const container = readerDiv.current;
+        if (!container) return;
+
+        let resizeTimer = null;
+        const observer = new ResizeObserver((entries) => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                const entry = entries[0];
+                if (!entry) return;
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) {
+                    renditionRef.current?.resize(width, height);
+                }
+            }, 180); // 防抖 180ms
+        });
+
+        observer.observe(container);
+        return () => {
+            observer.disconnect();
+            if (resizeTimer) clearTimeout(resizeTimer);
+        };
+    }, [renditionRef]);
 
     const handlePageClick = (dir) => {
         const sel = window.getSelection();
@@ -672,7 +767,7 @@ export default function ReaderEngine({ bookUrl }) {
                 height: '100%',
                 overflowY: pageMode === 'scroll' ? 'auto' : 'hidden',
                 overflowX: 'hidden',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
             }} />
 
             {pageMode === 'paginated' && (

@@ -104,6 +104,8 @@ export const ReaderProvider = ({ children }) => {
     // ★ 新 UI 状态结构
     const [leftPanel, setLeftPanel] = useState({ isOpen: true, activeTab: 'toc' });
     const [rightPanel, setRightPanel] = useState({ isOpen: false, mode: null, content: '' });
+    const [sidebarMode, setSidebarMode] = useState(() => load('sidebarMode', 'drawer')); // 'drawer' | 'fixed'
+    const [activeGhostCfi, setActiveGhostCfi] = useState(null);
 
     // 排版设置
     const [fontSize, setFontSize] = useState(() => load('fontSize', 18));
@@ -117,6 +119,7 @@ export const ReaderProvider = ({ children }) => {
     useEffect(() => save('theme', highlightTheme), [highlightTheme]);
     useEffect(() => save('colorMode', colorMode), [colorMode]);
     useEffect(() => save('glassAlpha_v3', glassAlpha), [glassAlpha]);
+    useEffect(() => save('sidebarMode', sidebarMode), [sidebarMode]);
 
     // AI 配置
     const [aiConfig, setAiConfig] = useState(() => load('aiConfig', DEFAULT_AI_CONFIG));
@@ -172,6 +175,8 @@ export const ReaderProvider = ({ children }) => {
             deleteMarkup, addMarkupToList, toc, setToc,
             leftPanel, setLeftPanel,
             rightPanel, setRightPanel,
+            sidebarMode, setSidebarMode,
+            activeGhostCfi, setActiveGhostCfi,
         }}>
             {children}
         </ReaderContext.Provider>

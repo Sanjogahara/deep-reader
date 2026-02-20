@@ -33,6 +33,7 @@ function ReaderView() {
         goHome, currentBookUrl, setShowSettings,
         leftPanel, setLeftPanel,
         rightPanel, setRightPanel,
+        sidebarMode, setSidebarMode,
         setAiTask, setAiResponse, setAiLoading, setCurrentSelection,
     } = useContext(ReaderContext);
 
@@ -54,8 +55,17 @@ function ReaderView() {
     const leftOpen = leftPanel.isOpen;
     const rightOpen = rightPanel.isOpen;
 
-    // 窄屏下用 overlay 抽屉，宽屏用 grid
-    const useDrawer = !isWide;
+    // 根据用户设置和屏幕尺寸决定布局模式
+    const useDrawer = !isWide || sidebarMode === 'drawer';
+    const useFixedSidebar = isWide && sidebarMode === 'fixed';
+
+    // 固定模式下，调整主内容区域宽度
+    const getMainContentWidth = () => {
+        if (!useFixedSidebar) return '1fr';
+        const leftWidth = leftOpen ? '300px' : '0px';
+        const rightWidth = rightOpen ? '320px' : '0px';
+        return `${leftWidth} 1fr ${rightWidth}`;
+    };
 
     const glassBtn = {
         width: '34px', height: '34px', borderRadius: '50%',
@@ -82,44 +92,25 @@ function ReaderView() {
 
     return (
         <div style={{
-            display: useDrawer ? 'block' : 'grid',
-            gridTemplateColumns: useDrawer ? undefined : `${leftOpen ? '300px' : '0px'} 1fr`,
+            display: 'flex',
+            width: '100vw',
             height: '100vh',
             padding: useDrawer ? 0 : '12px',
             gap: useDrawer ? 0 : '12px',
-            transition: 'grid-template-columns 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
             overflow: 'hidden',
             position: 'relative',
         }}>
 
             {/* ══ 左侧面板 ══ */}
-            {useDrawer ? (
-                <>
-                    {leftOpen && <div onClick={() => setLeftPanel(p => ({ ...p, isOpen: false }))} style={{
-                        position: 'fixed', inset: 0, zIndex: 199,
-                        background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)',
-                    }} />}
-                    <LiquidGlass displacementScale={18} fragment="liquidGlassSubtle" elasticity={0.06}
-                        style={drawerStyle(leftOpen, 'left')}>
-                        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-                            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
-                                <MarkupList />
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(var(--glass-bg-rgb), 0.15)', marginTop: '8px', flexShrink: 0 }}>
-                                <button onClick={goHome} style={{ flex: 1, padding: '9px', borderRadius: '10px', border: 'none', background: 'rgba(var(--glass-bg-rgb), 0.4)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>← 书架</button>
-                                <button onClick={() => setShowSettings(true)} style={{ width: '36px', height: '36px', borderRadius: '10px', border: 'none', background: 'rgba(var(--glass-bg-rgb), 0.4)', color: 'var(--text-primary)', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⚙️</button>
-                            </div>
-                        </div>
-                    </LiquidGlass>
-                </>
-            ) : (
+            {!useDrawer && (
                 <LiquidGlass displacementScale={0} fragment="liquidGlassSubtle" elasticity={0.06}
                     style={{
                         display: 'flex', flexDirection: 'column',
                         overflow: 'hidden', padding: '16px',
+                        width: leftOpen ? '300px' : '0px',
+                        minWidth: leftOpen ? '300px' : '0px',
                         opacity: leftOpen ? 1 : 0,
                         pointerEvents: leftOpen ? 'auto' : 'none',
-                        transition: 'opacity 0.3s ease', minWidth: 0,
                     }}>
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
                         <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
@@ -133,10 +124,34 @@ function ReaderView() {
                 </LiquidGlass>
             )}
 
+            {/* 抽屉模式的左侧面板 */}
+            {useDrawer && leftOpen && (
+                <>
+                    <div onClick={() => setLeftPanel(p => ({ ...p, isOpen: false }))} style={{
+                        position: 'fixed', inset: 0, zIndex: 199,
+                        background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(2px)',
+                    }} />
+                    <LiquidGlass displacementScale={18} fragment="liquidGlassSubtle" elasticity={0.06}
+                        style={drawerStyle(leftOpen, 'left')}>
+                        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+                            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, WebkitOverflowScrolling: 'touch' }}>
+                                <MarkupList />
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', paddingTop: '12px', borderTop: '1px solid rgba(var(--glass-bg-rgb), 0.15)', marginTop: '8px', flexShrink: 0 }}>
+                                <button onClick={goHome} style={{ flex: 1, padding: '9px', borderRadius: '10px', border: 'none', background: 'rgba(var(--glass-bg-rgb), 0.4)', color: 'var(--text-primary)', fontSize: '13px', fontWeight: '500', cursor: 'pointer' }}>← 书架</button>
+                                <button onClick={() => setShowSettings(true)} style={{ width: '36px', height: '36px', borderRadius: '10px', border: 'none', background: 'rgba(var(--glass-bg-rgb), 0.4)', color: 'var(--text-primary)', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⚙️</button>
+                            </div>
+                        </div>
+                    </LiquidGlass>
+                </>
+            )}
+
             {/* ══ 中间阅读区 ══ */}
             <LiquidGlass displacementScale={18} fragment="liquidGlassSubtle" disableTilt disableHover
                 style={{
-                    display: 'flex', position: 'relative', overflow: 'hidden', minWidth: 0,
+                    display: 'flex', position: 'relative', overflow: 'hidden',
+                    flex: 1,
+                    minWidth: 0,
                     ...(useDrawer ? { height: '100vh', borderRadius: 0 } : {}),
                 }}>
                 <div style={{
@@ -156,69 +171,93 @@ function ReaderView() {
                         title={leftOpen ? '收起目录' : '展开目录'}
                     >{leftOpen && !useDrawer ? '◀' : '▶'}</button>
 
+                    {/* 左上角设置按钮 */}
                     <button onClick={() => setShowSettings(true)}
                         style={{
                             ...glassBtn,
                             position: 'absolute',
-                            bottom: `calc(14px + env(safe-area-inset-bottom))`,
-                            right: '14px', zIndex: 100,
-                            fontSize: '14px', opacity: 0.5,
-                            transition: 'opacity 0.2s ease',
+                            top: `calc(14px + env(safe-area-inset-top))`,
+                            right: isWide ? 'calc(14px + 44px)' : '14px', zIndex: 100,
+                            fontSize: '14px',
                         }}
-                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                        onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
                         title="设置"
                     >⚙️</button>
+
+                    {/* Sidebar模式切换按钮 - 只在宽屏时显示 */}
+                    {isWide && (
+                        <button onClick={() => setSidebarMode(sidebarMode === 'drawer' ? 'fixed' : 'drawer')}
+                            style={{
+                                ...glassBtn,
+                                position: 'absolute',
+                                top: `calc(14px + env(safe-area-inset-top))`,
+                                right: '14px', zIndex: 100,
+                                fontSize: '14px',
+                                background: sidebarMode === 'fixed' ? 'rgba(var(--glass-bg-rgb), 0.5)' : 'rgba(var(--glass-bg-rgb), 0.35)',
+                            }}
+                            title={sidebarMode === 'drawer' ? '切换到固定侧边栏' : '切换到抽屉模式'}
+                        >{sidebarMode === 'drawer' ? '📌' : '📱'}</button>
+                    )}
                 </div>
             </LiquidGlass>
 
             {/* ══ 右侧面板 ══ */}
-            {useDrawer ? (
-                <>
-                    {rightOpen && <div onClick={closeRightPanel} style={{
-                        position: 'fixed', inset: 0, zIndex: 199,
-                        background: 'rgba(0,0,0,0.1)',
-                    }} />}
-                    <LiquidGlass displacementScale={15} fragment="liquidGlassSubtle" blurAmount={0.12} saturation={120} elasticity={0.06}
+            {!useDrawer && (
+                <div style={{
+                    width: rightOpen ? '320px' : '0px',
+                    minWidth: rightOpen ? '320px' : '0px',
+                    overflow: 'hidden',
+                    position: 'relative',
+                }}>
+                    <LiquidGlass displacementScale={15} fragment="liquidGlassSubtle" blurAmount={0.45} saturation={150} elasticity={0.06}
                         borderRadius="24px" disableTilt disableHover
-                        style={drawerStyle(rightOpen, 'right')}>
+                        style={{
+                            width: '320px',
+                            height: '100%',
+                            opacity: rightOpen ? 1 : 0,
+                            transform: rightOpen ? 'translateX(0)' : 'translateX(20px)',
+                            transition: 'opacity 0.3s ease, transform 0.3s ease',
+                            '--glass-alpha': '0.5',
+                        }}>
                         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px', color: 'var(--text-primary)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
                                 <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>
                                     {rightPanel.mode === 'note' ? '笔记' : rightPanel.mode === 'translate' ? '翻译' : '解析'}
                                 </span>
+                                <button onClick={closeRightPanel} style={{
+                                    width: '24px', height: '24px', borderRadius: '50%', border: 'none',
+                                    background: 'rgba(var(--glass-bg-rgb), 0.3)', color: 'var(--text-muted)',
+                                    cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>✕</button>
                             </div>
                             <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
                                 <ActionWidget />
                             </div>
                         </div>
                     </LiquidGlass>
-                </>
-            ) : (
-                <>
-                    {rightOpen && <div onClick={closeRightPanel} style={{ position: 'fixed', inset: 0, zIndex: 149 }} />}
-                    <LiquidGlass displacementScale={15} fragment="liquidGlassSubtle" blurAmount={0.13} saturation={110} elasticity={0.06}
-                        borderRadius="24px" disableTilt disableHover
-                        style={{
-                            position: 'fixed', top: '12px', bottom: '12px', right: '12px', width: '320px', zIndex: 150,
-                            opacity: rightOpen ? 1 : 0,
-                            transform: rightOpen ? 'translateX(0)' : 'translateX(20px)',
-                            pointerEvents: rightOpen ? 'auto' : 'none',
-                            transition: 'all 0.3s ease',
-                            '--glass-alpha': '0.13',
-                        }}>
+                </div>
+            )}
+
+            {/* 抽屉模式的右侧面板 */}
+            {useDrawer && rightOpen && (
+                <LiquidGlass displacementScale={15} fragment="liquidGlassSubtle" blurAmount={0.35} saturation={130} elasticity={0.06}
+                    borderRadius="24px" disableTilt disableHover
+                    style={{...drawerStyle(rightOpen, 'right'), '--glass-alpha': '0.45'}}>
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px', color: 'var(--text-primary)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexShrink: 0 }}>
                             <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px' }}>
                                 {rightPanel.mode === 'note' ? '笔记' : rightPanel.mode === 'translate' ? '翻译' : '解析'}
                             </span>
+                            <button onClick={closeRightPanel} style={{
+                                width: '24px', height: '24px', borderRadius: '50%', border: 'none',
+                                background: 'rgba(var(--glass-bg-rgb), 0.3)', color: 'var(--text-muted)',
+                                cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>✕</button>
                         </div>
                         <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
                             <ActionWidget />
                         </div>
                     </div>
                 </LiquidGlass>
-                </>
             )}
 
             <FloatingMenu />
